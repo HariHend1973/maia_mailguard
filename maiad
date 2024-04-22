@@ -3823,14 +3823,19 @@ sub maia_store_mail($$$$$@) {
        if (validate($htype, '^Subject$', 'i')) {
           $subject .= $htext;
        }
-       if (validate($htype, '^Content-Type$', 'i') && validate($htext, 'charset="(.+)"')) {
-          $document_charset = validate($htext, 'charset="(.+)"');
+       if (validate($htype, '^Content-Type$', 'i') && validate($htext, 'charset="([^"]+)"')) {
+          $document_charset = validate($htext, 'charset="([^"]+)"');
+       } elsif (validate($htype, '^Content-Type$', 'i') && validate($htext, 'charset=(.+)')) {
+          $document_charset = validate($htext, 'charset=(.+)');
        }
     }
     $subject = maia_decode_subject($subject, $document_charset);
     $subject = substr($subject, 0, 255) if length($subject) > 255;
     $subject = untaint($subject);
     $sender = substr($sender, 0, 255) if length($sender) > 255;
+    if ($document_charset ne "") {
+	from_to($contents, $document_charset, 'UTF-8');
+    }
 
     if (!$oversized) {
         if ($dbtype =~ /^mysql$/si) { # MySQL
@@ -13743,7 +13748,7 @@ sub ask_av {
       do_log(3,"Using ($av_name) on dir: $query");
     } else {                     # must check each file individually
       # replace {}/* with directory name and file, and * with current file name
-      $query =~ s[ ({}/)? \* ][ $1 eq '' ? $f : "$tempdir/parts/$f" ]gesx;
+      $query =~ s[ (\{\}/)? \* ][ $1 eq '' ? $f : "$tempdir/parts/$f" ]gesx;
       do_log(3,"Using ($av_name) on file: $query");
     }
     my($t_status,$t_output) = &$code($query, @_);
@@ -13810,10 +13815,11 @@ sub run_av {
     ($scan_status,$output,$virusnames) = &$command(@_);
   } else {
     my(@args) = split(' ',$args);
-    if (grep { m{^({}/)?\*\z} } @args) {    #  {}/* or *, list each file
+    if (grep { m{^(\{\}/)?\*\z} } @args) {    #  {}/* or *, list each file
       # replace asterisks with bare file names (basenames) if alone or in {}/*
       local($1);
-      @args = map { !m{^({}/)?\*\z} ? $_
+      @args = map { !m{^(\{\}/)?\*\z} ? $_
+
                                   : map {$1.untaint($_)} @$bare_fnames } @args;
     }
     for (@args) { s[{}][$tempdir/parts]g }  # replace {} with directory name
